@@ -80,6 +80,9 @@ int main(int argc, char *argv[])
    MPI_Send(B, Nl*Nl, MPI_DOUBLE, down, 2, cannon_comm);
 
    tmp=buf; buf=B; B=tmp;
+    
+   MPI_Wait(&req1, &status);
+   MPI_Wait(&req3, &status);
   }
 
   MPI_Barrier(cannon_comm);
