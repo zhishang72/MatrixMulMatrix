@@ -2,8 +2,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <time.h>
 #include <math.h>
+#ifdef _OPENACC
+#include <openacc.h>
+#endif /*_OPENACC*/
 #include <mpi.h>
 
 #define N 1024*4
@@ -49,6 +53,18 @@ int main(int argc, char *argv[])
     MPI_Cart_create(MPI_COMM_WORLD,2,dims,periods,1,&cannon_comm);
     MPI_Cart_shift(cannon_comm,0,1,&left,&right);
     MPI_Cart_shift(cannon_comm,1,1,&up,&down);
+    
+    bool accl = false;
+    #if _OPENACC
+        int ngpus=acc_get_num_devices(acc_device_nvidia);
+        if (ngpus > 0) accl = true;
+        int devicenum=rank%ngpus;
+        printf("MPI rank: %4i; GPU device: %4i\n",rank,devicenum);
+        acc_set_device_num(devicenum,acc_device_nvidia);
+        // Call acc_init after acc_set_device_num to avoid 
+        // multiple contexts on device 0 in multi GPU systems
+        acc_init(acc_device_nvidia);
+    #endif /*_OPENACC*/
 
     start=MPI_Wtime();
     for (i=0; i<Nl; i++)
@@ -60,25 +76,36 @@ int main(int argc, char *argv[])
             C[i*Nl+j]=0.0;
         }
     }
-    
+   
+    #pragma acc data copyin(A[Nl*Nl],B[Nl*Nl]), create(C[Nl*Nl]) async(rank) if(accl)     
     for (shift=0; shift<dims[0]; shift++)
     {
     // Matrix multiplication
-        for (i=0; i<Nl; i++)
-            for (j=0; j<Nl; j++) 
-                for (k=0; k<Nl; k++)
-                    C[i*Nl+k]+=A[i*Nl+j]*B[j*Nl+k];
-
+        #pragma acc kernels async(rank) if(accl)
+        {
+            #pragma acc loop independent gang worker vector collapse(2)
+            for (i=0; i<Nl; i++)    
+                for (j=0; j<Nl; j++)    
+                    C[i*Nl+j]=0.0;
+            #pragma omp parallel for shared(Nl, A, B, C)
+            #pragma acc loop independent gang worker vector collapse(3)
+            for (i=0; i<Nl; i++)
+                for (j=0; j<Nl; j++) 
+                    for (k=0; k<Nl; k++)
+                        C[i*Nl+k]+=A[i*Nl+j]*B[j*Nl+k];
+        }
+        #pragma acc update self(C)
    // Communication left - right
         MPI_Irecv(buf, Nl*Nl, MPI_DOUBLE, left, 100, cannon_comm, &req1);
-        MPI_Isend(A, Nl*Nl, MPI_DOUBLE, right, 100, cannon_comm, &req2);   
-        tmp=buf; buf=A; A=tmp;
-
+        MPI_Isend(A, Nl*Nl, MPI_DOUBLE, right, 100, cannon_comm, &req2);
+        tmp=buf; buf=A; A=tmp; 
+        
    // Communication up - down
         MPI_Irecv(buf, Nl*Nl, MPI_DOUBLE, up, 200, cannon_comm, &req3);
         MPI_Isend(B, Nl*Nl, MPI_DOUBLE, down, 200, cannon_comm, &req4);
         tmp=buf; buf=B; B=tmp;
     }
+    #pragma acc wait(rank)
     MPI_Wait(&req1, &status);
     MPI_Wait(&req2, &status);   
     MPI_Wait(&req3, &status);

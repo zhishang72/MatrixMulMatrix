@@ -1,0 +1,23 @@
+#
+# Author: Zhi Shang <zhishang72@gmail.com>
+#
+CC	= nvcc 
+#
+#SRCS    = mpi_mxm_cannon_non-block_cuda.cu
+#
+OBJECTS  = mpi_mxm_cannon_non-block_cuda.o
+# 
+INCLUDE = -I/software/easybuild/software/OpenMPI/1.10.3-GCC-5.4.0-2.26/include 
+#INCLUDE = -I/software/easybuild/software/OpenMPI/1.10.3-GCC-5.4.0-2.26/include/openmpi/ompi/mpi/cxx
+#  
+LIBES   = -L/software/easybuild/software/OpenMPI/1.10.3-GCC-5.4.0-2.26/lib  
+#LIBES   =
+cuLIBES = -lcuda -lcudart -lmpi -lmpi_cxx -lm -lpthread -lopen-rte -lopen-pal -ldl -lnsl -lutil   
+#
+CFLAGS  = -O3 -gencode arch=compute_35,code=sm_35 -Wno-deprecated-gpu-targets -D_FORCE_INLINES  
+#
+mxm_cannon:$(SRCS)
+	$(CC) $(CFLAGS) $(INCLUDE) $(SRCS) -o mxm_cannon $(LIBES) $(cuLIBES) 
+#
+clean:
+	rm -f *.o mxm_cannon *~ *.dat
