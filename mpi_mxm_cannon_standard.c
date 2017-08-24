@@ -102,14 +102,6 @@ int main(int argc, char *argv[])
   
   MPI_Reduce(&tloc, &tmax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
   if(rank==0) printf("CPU time: %.4fs\n",tmax);
-  /*
-  if(rank==0)
-  {
-    FILE * myfile;
-    myfile = fopen("time.dat","w");
-    fprintf(myfile,"Time: %.4fs\n",end-start);
-  }
-  */
   free(A); free(B); free(buf); free(C);
   MPI_Finalize();
   return 0;
