@@ -1,23 +1,24 @@
+// Author: Zhi Shang <zhishang72@gmail.com>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <mpi.h>
 
-#define N 1024*1
+#define N 1024*4
 
 int main(int argc, char *argv[])
 {
   MPI_Comm cannon_comm;
   MPI_Status status;
   int rank,size;
-  int shift;
-  int i,j,k;
+  int shift,i,j,k;
   int dims[2];
   int periods[2];
   int left,right,up,down;
   double *A,*B,*C;
   double *buf,*tmp;
-  double start,end;
+  double start,tloc,tmax;
   unsigned int iseed=0;
   int Nl;
 
@@ -42,7 +43,14 @@ int main(int argc, char *argv[])
   B=(double*)malloc(Nl*Nl*sizeof(double));
   buf=(double*)malloc(Nl*Nl*sizeof(double));
   C=(double*)calloc(Nl*Nl,sizeof(double));
+    
+  if(rank==0) printf("MPI processors: %4i\n",size);
 
+  MPI_Cart_create(MPI_COMM_WORLD,2,dims,periods,1,&cannon_comm);
+  MPI_Cart_shift(cannon_comm,0,1,&left,&right);
+  MPI_Cart_shift(cannon_comm,1,1,&up,&down);
+
+  start=MPI_Wtime();
   for(i=0;i<Nl;i++)
   {
     for(j=0;j<Nl;j++)
@@ -53,12 +61,6 @@ int main(int argc, char *argv[])
     }
   }
 
-  MPI_Cart_create(MPI_COMM_WORLD,2,dims,periods,1,&cannon_comm);
-  MPI_Cart_shift(cannon_comm,0,1,&left,&right);
-  MPI_Cart_shift(cannon_comm,1,1,&up,&down);
-
-  start=MPI_Wtime();
-
   for(shift=0;shift<dims[0];shift++)
   {
   // Matrix multiplication
@@ -67,19 +69,16 @@ int main(int argc, char *argv[])
         for(j=0;j<Nl;j++)
           C[i*Nl+j]+=A[i*Nl+k]*B[k*Nl+j];
 
-   if(shift==dims[0]-1) break;
-
    // Communication
    MPI_Sendrecv(A,Nl*Nl,MPI_DOUBLE,left,1,buf,Nl*Nl,MPI_DOUBLE,right,1,cannon_comm,&status);
    tmp=buf; buf=A; A=tmp;
    MPI_Sendrecv(B,Nl*Nl,MPI_DOUBLE,up,2,buf,Nl*Nl,MPI_DOUBLE,down,2,cannon_comm,&status);
    tmp=buf; buf=B; B=tmp;
   }
-
-  MPI_Barrier(cannon_comm);
-
-  end=MPI_Wtime();
-  if(rank==0) printf("Time: %.4fs\n",end-start);
+  tloc = MPI_Wtime() - start;
+  
+  MPI_Reduce(&tloc, &tmax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+  if(rank==0) printf("CPU time: %.4fs\n",tmax);
   free(A); free(B); free(buf); free(C);
   MPI_Finalize();
   return 0;
